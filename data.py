@@ -95,18 +95,39 @@ def normal_freq(f, nf, min_sep, scale=0.05):
         f[i] = f_new
 
 
-def amplitude_generation(dim, amplitude, floor_amplitude=0.1):
+def amplitude_generation(dim, amplitude, floor_amplitude=0.1): 
     """
-    Generate the amplitude associated with each frequency.
+    Generate amplitude values corresponding to each frequency component.
+
+    Parameters:
+    dim (tuple): The desired shape of the output amplitude matrix (e.g., (P, N)).
+    amplitude (str): The strategy used to generate amplitudes. Options include:
+                     'uniform', 'normal', 'normal_floor', and 'alternating'.
+    floor_amplitude (float, optional): The minimum amplitude value in certain schemes. Default is 0.1.
+
+    Returns:
+    numpy.ndarray: An array of shape `dim` containing generated amplitude values according to the selected strategy.
     """
+    
     if amplitude == 'uniform':
+        # Uniform random distribution in the range [floor_amplitude, 15].
         return np.random.rand(*dim) * (15 - floor_amplitude) + floor_amplitude
+
     elif amplitude == 'normal':
+        # Absolute value of samples from the standard normal distribution (zero mean, unit variance).
         return np.abs(np.random.randn(*dim))
+
     elif amplitude == 'normal_floor':
-        return 5*np.abs(np.random.randn(*dim)) + floor_amplitude
+        # Scaled absolute normal distribution with a fixed floor offset.
+        # Produces amplitudes with higher mean and lower bound control.
+        return 5 * np.abs(np.random.randn(*dim)) + floor_amplitude
+
     elif amplitude == 'alternating':
+        # Amplitudes alternate between low and high scales.
+        # The final value is a sum of a small uniform baseline and a sparsely distributed large component.
+        # The large component is controlled by a binary mask (0 or 1) applied to the high scale.
         return np.random.rand(*dim) * 0.5 + 20 * np.random.rand(*dim) * np.random.randint(0, 2, size=dim)
+
 
 
 
