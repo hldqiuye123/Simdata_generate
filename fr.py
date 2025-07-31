@@ -71,36 +71,77 @@ import copy
 def gaussian_kernel(f, xgrid,  sigma_phase, r, nfreq, theta_set):
     """
     Create a frequency representation with separate Gaussian kernels for amplitude and phase.
+
+    Parameters:
+    f : ndarray of shape (B, P)
+        Instantaneous frequency positions for each signal component across batches.
+    xgrid : ndarray of shape (N,)
+        Discretized frequency grid for mapping the frequency response.
+    sigma_phase : float
+        Standard deviation controlling the spread of the Gaussian kernel.
+    r : ndarray of shape (B, P)
+        Amplitude values associated with each frequency component.
+    nfreq : int
+        Total number of frequency bins (unused in body but may be used externally for consistency).
+    theta_set : ndarray of shape (B, P)
+        Phase values (in radians) associated with each frequency component.
+
+    Returns:
+    fr_amp : ndarray of shape (B, N)
+        Amplitude spectrogram constructed via Gaussian smoothing.
+    fr_phase : ndarray of shape (B, N)
+        Phase spectrogram extracted from the complex frequency representation.
+    fr_ground : ndarray of shape (B, N)
+        Ground-truth amplitude map placeholder (set to ones, modifiable externally).
+    m1 : ndarray of shape (B, N)
+        Mask matrix initialized to zeros (may be used for supervision or evaluation).
+    m2 : ndarray of shape (B, N)
+        Complementary mask to m1, initialized to ones.
     """
-    fr_amp_only = np.zeros((f.shape[0], xgrid.shape[0]), dtype='float32')  # Initialize amplitude array
-    fr_phase_only = np.zeros((f.shape[0], xgrid.shape[0]), dtype=complex)  # Initialize phase array
+    # Initialize the amplitude response matrix (real-valued)
+    fr_amp_only = np.zeros((f.shape[0], xgrid.shape[0]), dtype='float32')
 
+    # Initialize the phase response matrix (complex-valued)
+    fr_phase_only = np.zeros((f.shape[0], xgrid.shape[0]), dtype=complex)
+
+    # Iterate over each frequency component
     for i in range(f.shape[1]):
+        # Compute absolute distances between frequency components and grid points
         dist = np.abs(xgrid[None, :] - f[:, i][:, None])
-        rdist = np.abs(xgrid[None, :] - (f[:, i][:, None] + 1))
-        ldist = np.abs(xgrid[None, :] - (f[:, i][:, None] - 1))
-        dist = np.minimum(dist, rdist, ldist)
 
-        # Apply phase term using Euler's formula
+        # Handle frequency periodicity by considering wrap-around effects
+        rdist = np.abs(xgrid[None, :] - (f[:, i][:, None] + 1))  # right neighbor
+        ldist = np.abs(xgrid[None, :] - (f[:, i][:, None] - 1))  # left neighbor
+        dist = np.minimum(dist, np.minimum(rdist, ldist))  # element-wise minimum
+
+        # Compute phase term using complex exponential (Euler's identity)
         phase_term = np.exp(1j * theta_set[:, i][:, None])
 
-        # Apply Gaussian kernel to amplitude
+        # Apply Gaussian kernel to amplitude channel
         gaussian_term_amp = np.exp(- dist ** 2 / sigma_phase ** 2)
+        # Normalize amplitude using per-sample maximum, and accumulate
         fr_amp_only += gaussian_term_amp * (r[:, i][:, None] / np.max(r, axis=1)[:, None])
 
-        # Apply separate Gaussian kernel to phase
+        # Apply a sharper Gaussian to the phase term for selective smoothing
         gaussian_term_phase = np.exp(- dist ** 2 / sigma_phase ** 3)
+        # Accumulate the complex-valued phase contributions
         fr_phase_only += gaussian_term_phase * phase_term
 
-    # Combine the amplitude and phase information into the complex fr
+    # Combine amplitude and phase to form final complex frequency representation
+    # Phase is extracted via angle of the accumulated complex phase signal
     fr = fr_amp_only * np.exp(1j * np.angle(fr_phase_only))
 
-    m1 = np.zeros((f.shape[0], xgrid.shape[0]), dtype='float32')
-    fr_ground = np.ones((f.shape[0], xgrid.shape[0]), dtype='float32')
-    m2 = np.ones((f.shape[0], xgrid.shape[0]), dtype='float32') - m1
+    # Generate auxiliary outputs for further processing or loss computation
+    m1 = np.zeros((f.shape[0], xgrid.shape[0]), dtype='float32')  # Zero mask
+    fr_ground = np.ones((f.shape[0], xgrid.shape[0]), dtype='float32')  # Ground truth placeholder
+    m2 = np.ones((f.shape[0], xgrid.shape[0]), dtype='float32') - m1  # Complementary mask
+
+    # Extract amplitude and phase from final complex response
     fr_amp = abs(fr)
     fr_phase = np.angle(fr)
+
     return fr_amp, fr_phase, fr_ground, m1, m2
+
 
 
 def triangle(f, xgrid, slope):
